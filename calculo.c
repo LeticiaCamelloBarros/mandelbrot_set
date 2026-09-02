@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "calculo.h"
-#include <omp.h>
+
 /* Região fixa do plano complexo exigida pelo enunciado */
 #define MANDELBROT_RE_MIN -2.0
 #define MANDELBROT_RE_MAX  1.0
