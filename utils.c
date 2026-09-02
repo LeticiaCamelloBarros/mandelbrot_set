@@ -5,7 +5,8 @@
 #include <stdbool.h>
 #include <time.h>
 #include "utils.h"
- int long_para_int_seguro(long valor, const char *nome_param) {
+
+int long_para_int_seguro(long valor, const char *nome_param) {
     if (valor > INT_MAX) {
         fprintf(stderr, "Erro: %s e grande demais (maximo permitido: %d)\n", nome_param, INT_MAX);
         exit(EXIT_FAILURE);
@@ -18,7 +19,7 @@
 /* arquivo existe e está vazio no início desta execução (uma execução   */
 /* não deve misturar tempos de execuções anteriores).                   */
 /* ------------------------------------------------------------------ */
- void inicializar_arquivo_tempos(const char *caminho) {
+void inicializar_arquivo_tempos(const char *caminho) {
     FILE *arquivo = fopen(caminho, "w");
     if (arquivo == NULL) {
         fprintf(stderr, "Erro: nao foi possivel criar o arquivo '%s'\n", caminho);
@@ -30,7 +31,7 @@
 /* ------------------------------------------------------------------ */
 /* Registra, em modo "append", o tempo gasto por uma implementação.     */
 /* ------------------------------------------------------------------ */
- void registrar_tempo(const char *caminho, const char *nome_implementacao, double segundos) {
+void registrar_tempo(const char *caminho, const char *nome_implementacao, double segundos) {
     FILE *arquivo = fopen(caminho, "a");
     if (arquivo == NULL) {
         fprintf(stderr, "Erro: nao foi possivel abrir o arquivo '%s' para escrita\n", caminho);
@@ -43,16 +44,15 @@
 /* ------------------------------------------------------------------ */
 /* Diferença, em segundos, entre dois "struct timespec".                */
 /* ------------------------------------------------------------------ */
- double diferenca_segundos(struct timespec inicio, struct timespec fim) {
+double diferenca_segundos(struct timespec inicio, struct timespec fim) {
     return (fim.tv_sec - inicio.tv_sec) + (fim.tv_nsec - inicio.tv_nsec) / 1e9;
 }
+
 /* ------------------------------------------------------------------ */
 /* Converte 'str' para um long positivo, escrevendo o resultado em      */
 /* *resultado. Retorna true em caso de sucesso e false se a entrada     */
 /* não for um número válido, estiver fora do intervalo, ou não for      */
 /* positiva — quem chamar decide o que fazer (ex: encerrar o programa). */
-/* Não usa exit() aqui dentro para que o chamador controle a mensagem   */
-/* de uso e o código de saída, mantendo a validação centralizada.       */
 /* ------------------------------------------------------------------ */
 bool parse_positive_long(const char *str, const char *nome_param, long *resultado) {
     if (str == NULL || nome_param == NULL || resultado == NULL) {
@@ -83,4 +83,16 @@ bool parse_positive_long(const char *str, const char *nome_param, long *resultad
 
     *resultado = valor;
     return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* NOVA FUNÇÃO — não existia no utils.c original.                       */
+/* Garante apenas que num_threads é positivo, cobrindo o caso de         */
+/* entradas negativas (sem limite superior).                            */
+/* ------------------------------------------------------------------ */
+void validar_num_threads(int num_threads) {
+    if (num_threads <= 0) {
+        fprintf(stderr, "Erro: numero de threads deve ser positivo (recebido: %d)\n", num_threads);
+        exit(EXIT_FAILURE);
+    }
 }
