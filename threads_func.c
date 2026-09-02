@@ -6,15 +6,12 @@
 #define FATOR_MAX_THREADS 4  /* margem de segurança acima do nº de núcleos */
 #include "calculo.h"
 #include "threads_func.h"
-
+/*as duas estratégias abaixo percorrem a imagem por LINHA,  */
+/* nunca por coluna. O buffer é armazenado de forma "row-major"    */
 /* ==================================================================== */
 /* PARTE 1: OpenMP (Seção 4.5.3)                                        */
 /* ==================================================================== */
 
-/* ------------------------------------------------------------------ */
-/* Definir manualmente o número de threads usadas pelas regiões         */
-/* paralelas OpenMP seguintes (Seção 4.5.3).                            */
-/* ------------------------------------------------------------------ */
 void definir_numero_threads(int num_threads) {
     if (num_threads <= 0) {
         fprintf(stderr, "Erro: numero de threads invalido (%d)\n", num_threads);
@@ -23,43 +20,13 @@ void definir_numero_threads(int num_threads) {
     omp_set_num_threads(num_threads);
 }
 
-/* ------------------------------------------------------------------ */
-/* Implementação OpenMP: divide as LINHAS da imagem entre as threads    */
-/* com "#pragma omp parallel for". Cada thread calcula um intervalo     */
-/* contíguo de linhas, escrevendo diretamente no buffer plano.          */
-/* Percorrer por linhas favorece a localidade de cache, já que o        */
-/* buffer é contíguo na memória (ver discussão da Seção 4.2).           */
-/* ------------------------------------------------------------------ */
 void dividir_iteracoes_entre_threads(unsigned char *imagem, const ParametrosMandelbrot *p) {
     int py;
-
     #pragma omp parallel for schedule(static)
     for (py = 0; py < p->altura; py++) {
         for (int px = 0; px < p->largura; px++) {
             double cr, ci;
             pixel_para_complexo(px, py, p->largura, p->altura, &cr, &ci);
-
-            long iteracoes = mandelbrot_point(cr, ci, p->max_iteracoes);
-            imagem[py * p->largura + px] = normaliza_intensidade(iteracoes, p->max_iteracoes);
-        }
-    }
-}
-
-/* ------------------------------------------------------------------ */
-/* Implementação OpenMP: mesma ideia, mas paralelizando pelo eixo das   */
-/* COLUNAS em vez das linhas. Mantida apenas para fins de comparação    */
-/* de desempenho no relatório — o enunciado exige só UMA implementação  */
-/* OpenMP na entrega final.                                             */
-/* ------------------------------------------------------------------ */
-void percorrer_colunas_mandelbrot(unsigned char *imagem, const ParametrosMandelbrot *p) {
-    int px;
-
-    #pragma omp parallel for schedule(static)
-    for (px = 0; px < p->largura; px++) {
-        for (int py = 0; py < p->altura; py++) {
-            double cr, ci;
-            pixel_para_complexo(px, py, p->largura, p->altura, &cr, &ci);
-
             long iteracoes = mandelbrot_point(cr, ci, p->max_iteracoes);
             imagem[py * p->largura + px] = normaliza_intensidade(iteracoes, p->max_iteracoes);
         }
@@ -67,16 +34,33 @@ void percorrer_colunas_mandelbrot(unsigned char *imagem, const ParametrosMandelb
 }
 
 /* ==================================================================== */
-/* PARTE 2: Pthreads - paralelismo de dados (Seção 4.2.2)               */
+/* PARTE 2: Pthreads - paralelismo de dados por LINHA (Seção 4.2.2)     */
+/*                                                                        */
+/*      */
+/* (imagem[py * largura + px]), ou seja, pixels da MESMA linha ficam     */
+/* contíguos na memória. Uma implementação que percorre por coluna       */
+/* (px fixo, py variando) acessa endereços espaçados de `largura` bytes  */
+/* a cada iteração — isso gera cache miss em quase todo acesso e pode    */
+/* degradar o desempenho o suficiente para estourar o tempo limite de    */
+/* execução em imagens grandes. Por isso essa abordagem foi eliminada.   */
 /* ==================================================================== */
 
-/* -------------------- ESTRATÉGIA 1: divisão por LINHAS -------------------- */
+/* -------------------- pthreads1: Estratégia 1 (Intercalada/Cíclica) -------------------- */
 
-static void *rotina_calcula_linhas(void *arg) {
-    ArgumentosThread *a = (ArgumentosThread *) arg;
+typedef struct {
+    int id_thread;
+    int total_threads;
+    unsigned char *imagem;
+    const ParametrosMandelbrot *params;
+} ArgCiclico;
+
+static void *rotina_calcula_ciclico(void *arg) {
+    ArgCiclico *a = (ArgCiclico *) arg;
     const ParametrosMandelbrot *p = a->params;
 
-    for (int py = a->indice_inicio; py < a->indice_fim; py++) {
+    /* Cada thread processa a linha id_thread, depois pula
+     * total_threads linhas para a próxima: id, id+T, id+2T, ... */
+    for (int py = a->id_thread; py < p->altura; py += a->total_threads) {
         for (int px = 0; px < p->largura; px++) {
             double cr, ci;
             pixel_para_complexo(px, py, p->largura, p->altura, &cr, &ci);
@@ -88,14 +72,9 @@ static void *rotina_calcula_linhas(void *arg) {
     return NULL;
 }
 
-/*
- * Cria 'num_threads', divide as ALTURA linhas da imagem em blocos
- * contíguos aproximadamente iguais (balanceamento, Seção 4.2.1) e
- * aguarda todas terminarem antes de retornar.
- */
-void mandelbrot_pthreads_por_linhas(unsigned char *imagem, const ParametrosMandelbrot *p, int num_threads) {
-    pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
-    ArgumentosThread *args = malloc(num_threads * sizeof(ArgumentosThread));
+void mandelbrot_pthreads_ciclico(unsigned char *imagem, const ParametrosMandelbrot *p, int num_threads) {
+    pthread_t *threads = malloc((size_t) num_threads * sizeof(pthread_t));
+    ArgCiclico *args = malloc((size_t) num_threads * sizeof(ArgCiclico));
 
     if (threads == NULL || args == NULL) {
         fprintf(stderr, "Erro: falha na alocacao de memoria para threads\n");
@@ -104,23 +83,18 @@ void mandelbrot_pthreads_por_linhas(unsigned char *imagem, const ParametrosMande
         exit(EXIT_FAILURE);
     }
 
-    int linhas_por_thread = p->altura / num_threads;
-    int linhas_restantes  = p->altura % num_threads;
-    int inicio = 0;
-
     for (int i = 0; i < num_threads; i++) {
-        int tamanho_bloco = linhas_por_thread + (i < linhas_restantes ? 1 : 0);
-
-        args[i].indice_inicio = inicio;
-        args[i].indice_fim    = inicio + tamanho_bloco;
+        args[i].id_thread     = i;
+        args[i].total_threads = num_threads;
         args[i].imagem        = imagem;
         args[i].params        = p;
 
-        if (pthread_create(&threads[i], NULL, rotina_calcula_linhas, &args[i]) != 0) {
+        if (pthread_create(&threads[i], NULL, rotina_calcula_ciclico, &args[i]) != 0) {
             fprintf(stderr, "Erro: falha ao criar a thread %d\n", i);
+            free(threads);
+            free(args);
             exit(EXIT_FAILURE);
         }
-        inicio += tamanho_bloco;
     }
 
     for (int i = 0; i < num_threads; i++) {
@@ -131,14 +105,21 @@ void mandelbrot_pthreads_por_linhas(unsigned char *imagem, const ParametrosMande
     free(args);
 }
 
-/* -------------------- ESTRATÉGIA 2: divisão por COLUNAS -------------------- */
+/* -------------------- pthreads2: Estratégia 2 (Blocos Contíguos) -------------------- */
 
-static void *rotina_calcula_colunas(void *arg) {
-    ArgumentosThread *a = (ArgumentosThread *) arg;
+typedef struct {
+    int py_inicio;
+    int py_fim;
+    unsigned char *imagem;
+    const ParametrosMandelbrot *params;
+} ArgBloco;
+
+static void *rotina_calcula_bloco(void *arg) {
+    ArgBloco *a = (ArgBloco *) arg;
     const ParametrosMandelbrot *p = a->params;
 
-    for (int px = a->indice_inicio; px < a->indice_fim; px++) {
-        for (int py = 0; py < p->altura; py++) {
+    for (int py = a->py_inicio; py < a->py_fim; py++) {
+        for (int px = 0; px < p->largura; px++) {
             double cr, ci;
             pixel_para_complexo(px, py, p->largura, p->altura, &cr, &ci);
 
@@ -148,15 +129,11 @@ static void *rotina_calcula_colunas(void *arg) {
     }
     return NULL;
 }
-
-/*
- * Mesma lógica da função anterior, mas particionando a LARGURA
- * (colunas) da imagem entre as threads em vez das linhas — a segunda
- * estratégia de divisão do trabalho exigida pelo enunciado.
- */
-void mandelbrot_pthreads_por_colunas(unsigned char *imagem, const ParametrosMandelbrot *p, int num_threads) {
-    pthread_t *threads = malloc(num_threads * sizeof(pthread_t));
-    ArgumentosThread *args = malloc(num_threads * sizeof(ArgumentosThread));
+/*agora o percorrer linha virou esse percorrer por bloco 
+por causa do modelo row-major de uma matriz em c */
+void mandelbrot_pthreads_blocos(unsigned char *imagem, const ParametrosMandelbrot *p, int num_threads) {
+    pthread_t *threads = malloc((size_t) num_threads * sizeof(pthread_t));
+    ArgBloco *args = malloc((size_t) num_threads * sizeof(ArgBloco));
 
     if (threads == NULL || args == NULL) {
         fprintf(stderr, "Erro: falha na alocacao de memoria para threads\n");
@@ -165,23 +142,22 @@ void mandelbrot_pthreads_por_colunas(unsigned char *imagem, const ParametrosMand
         exit(EXIT_FAILURE);
     }
 
-    int colunas_por_thread = p->largura / num_threads;
-    int colunas_restantes  = p->largura % num_threads;
-    int inicio = 0;
-
     for (int i = 0; i < num_threads; i++) {
-        int tamanho_bloco = colunas_por_thread + (i < colunas_restantes ? 1 : 0);
+        /* Fatia [ (i*altura)/N , ((i+1)*altura)/N ) — cobre todas as
+         * linhas exatamente uma vez, mesmo quando altura não é
+         * múltiplo de num_threads (a divisão inteira absorve o resto
+         * de forma automática e uniforme entre as fatias). */
+        args[i].py_inicio = (int) (((long) i * p->altura) / num_threads);
+        args[i].py_fim    = (int) (((long) (i + 1) * p->altura) / num_threads);
+        args[i].imagem    = imagem;
+        args[i].params    = p;
 
-        args[i].indice_inicio = inicio;
-        args[i].indice_fim    = inicio + tamanho_bloco;
-        args[i].imagem        = imagem;
-        args[i].params        = p;
-
-        if (pthread_create(&threads[i], NULL, rotina_calcula_colunas, &args[i]) != 0) {
+        if (pthread_create(&threads[i], NULL, rotina_calcula_bloco, &args[i]) != 0) {
             fprintf(stderr, "Erro: falha ao criar a thread %d\n", i);
+            free(threads);
+            free(args);
             exit(EXIT_FAILURE);
         }
-        inicio += tamanho_bloco;
     }
 
     for (int i = 0; i < num_threads; i++) {
@@ -191,4 +167,3 @@ void mandelbrot_pthreads_por_colunas(unsigned char *imagem, const ParametrosMand
     free(threads);
     free(args);
 }
-
