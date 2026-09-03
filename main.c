@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &inicio);
     mandelbrot_pthreads_ciclico(imagem_pthreads1, &p, num_threads);
     clock_gettime(CLOCK_MONOTONIC, &fim);
-    registrar_tempo(arquivo_tempos, "Pthreads1 (ciclica)", diferenca_segundos(inicio, fim));
+    registrar_tempo(arquivo_tempos, "Pthreads1", diferenca_segundos(inicio, fim));
 
     snprintf(nome_arquivo, sizeof(nome_arquivo), "mandelbrot_%s_pthreads1.pgm", LOGIN);
     if (escreve_pgm(nome_arquivo, imagem_pthreads1, p.largura, p.altura) != 0) {
@@ -112,7 +112,7 @@ int main(int argc, char *argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &inicio);
     mandelbrot_pthreads_blocos(imagem_pthreads2, &p, num_threads);
     clock_gettime(CLOCK_MONOTONIC, &fim);
-    registrar_tempo(arquivo_tempos, "Pthreads2 (blocos)", diferenca_segundos(inicio, fim));
+    registrar_tempo(arquivo_tempos, "Pthreads2", diferenca_segundos(inicio, fim));
 
     snprintf(nome_arquivo, sizeof(nome_arquivo), "mandelbrot_%s_pthreads2.pgm", LOGIN);
     if (escreve_pgm(nome_arquivo, imagem_pthreads2, p.largura, p.altura) != 0) {

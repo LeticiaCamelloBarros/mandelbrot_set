@@ -53,7 +53,6 @@ typedef struct {
     unsigned char *imagem;
     const ParametrosMandelbrot *params;
 } ArgCiclico;
-
 static void *rotina_calcula_ciclico(void *arg) {
     ArgCiclico *a = (ArgCiclico *) arg;
     const ParametrosMandelbrot *p = a->params;
@@ -71,7 +70,6 @@ static void *rotina_calcula_ciclico(void *arg) {
     }
     return NULL;
 }
-
 void mandelbrot_pthreads_ciclico(unsigned char *imagem, const ParametrosMandelbrot *p, int num_threads) {
     pthread_t *threads = malloc((size_t) num_threads * sizeof(pthread_t));
     ArgCiclico *args = malloc((size_t) num_threads * sizeof(ArgCiclico));

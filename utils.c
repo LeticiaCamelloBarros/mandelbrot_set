@@ -86,7 +86,6 @@ bool parse_positive_long(const char *str, const char *nome_param, long *resultad
 }
 
 /* ------------------------------------------------------------------ */
-/* NOVA FUNÇÃO — não existia no utils.c original.                       */
 /* Garante apenas que num_threads é positivo, cobrindo o caso de         */
 /* entradas negativas (sem limite superior).                            */
 /* ------------------------------------------------------------------ */

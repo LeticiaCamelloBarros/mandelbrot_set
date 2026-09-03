@@ -31,14 +31,14 @@ long mandelbrot_point(double cr, double ci, long max_iteracoes) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Converte a posição de um pixel (px, py) para o ponto correspondente  */
-/* do plano complexo, mapeando linearmente:                            */
-/*   px em [0, largura)  -> cr em [RE_MIN, RE_MAX]                     */
-/*   py em [0, altura)   -> ci em [IM_MIN, IM_MAX]                     */
-/*                                                                      */
-/* Essa correspondência precisa ser usada por TODAS as implementações   */
-/* (serial, OpenMP, Pthreads) para garantir que os quatro arquivos de    */
-/* saída sejam idênticos entre si, como exige o enunciado.              */
+/* Converte a posição de um pixel (px, py) para o ponto correspondente*/
+/* do plano complexo, mapeando linearmente:                           */
+/*   px em [0, largura)  -> cr em [RE_MIN, RE_MAX]                    */
+/*   py em [0, altura)   -> ci em [IM_MIN, IM_MAX]                    */
+/*                                                                    */
+/* Essa correspondência precisa ser usada por TODAS as implementações */
+/* (serial, OpenMP, Pthreads) para garantir que os quatro arquivos de */
+/* saída sejam idênticos entre si, como exige o enunciado.            */
 /* ------------------------------------------------------------------ */
 void pixel_para_complexo(int px, int py, int largura, int altura,
                           double *cr, double *ci) {
@@ -112,7 +112,8 @@ void calcula_mandelbrot_serial(unsigned char *imagem, int largura, int altura,
 /* ------------------------------------------------------------------ */
 int escreve_pgm(const char *caminho, const unsigned char *imagem, int largura, int altura) {
     FILE *arquivo = fopen(caminho, "w");
-    if (arquivo == NULL) {
+    if (arquivo == NULL)
+    {
         fprintf(stderr, "Erro: nao foi possivel criar o arquivo de saida '%s'\n", caminho);
         return -1;
     }
